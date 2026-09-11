@@ -709,6 +709,11 @@ function pollClientTask(task) {
     finishTask(task, TASK_STATUS.FAILED, null, '客户端派发失败: ' + st.error);
     return;
   }
+  if (st.phase === 'gone') {
+    // 自动化记录被外部清掉（或从未写入成功）——无法继续跟踪，快速失败避免挂死
+    finishTask(task, TASK_STATUS.FAILED, null, '客户端调度记录丢失，无法继续跟踪该任务');
+    return;
+  }
   if (st.phase !== 'tracked') return; // 数据库暂时读不到，等下一轮
 
   if (st.sessionId && !current.dispatchedAt) {
