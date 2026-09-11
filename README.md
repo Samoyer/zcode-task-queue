@@ -63,7 +63,7 @@ GLM 套餐有任务并发限制，**你自己在客户端里正在跑的会话�
 ```
 
 <details>
-<summary>开机自启（可选，launchd）</summary>
+<summary>开机自启（可选，launchd）— 先编辑 plist 把 3 处 /REPLACE/WITH/... 改成你的项目实际路径</summary>
 
 ```bash
 mkdir -p ~/Library/LaunchAgents
