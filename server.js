@@ -324,16 +324,44 @@ function assistantTextSince(sessionId, sinceMs) {
 
 let clientTasks = [];
 
+/** 客户端左侧「已注册项目」清单：读各数据目录 setting.json 的 recentProjects */
+function readRegisteredProjects() {
+  const out = new Set();
+  const candidates = new Set([path.join(os.homedir(), '.zcode/v2/setting.json')]);
+  if (clientPaths.indexDb) {
+    candidates.add(path.join(path.dirname(clientPaths.indexDb), 'setting.json'));
+  }
+  for (const f of candidates) {
+    try {
+      const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+      for (const p of j.recentProjects || []) if (p && typeof p === 'string') out.add(p);
+    } catch { /* 缺文件或不可读则跳过 */ }
+  }
+  return out;
+}
+
 function readClientTasks() {
   const db = openSessionDb();
   if (!db) { clientTasksError = '未找到客户端会话数据库（客户端是否运行过？）'; return; }
   try {
     const nowMs = now();
-    const sessions = db.prepare(`
-      SELECT id, title, directory, time_created, time_updated
-      FROM session WHERE task_type = 'interactive'
-      ORDER BY time_updated DESC LIMIT 30
-    `).all();
+    // 只取客户端左侧「已注册项目」下的会话（项目清单来自 setting.json 的 recentProjects）。
+    // 必须先按项目过滤再取最近 N 条：库里有大量 directory=主目录 的历史会话，
+    // 否则它们会挤占名额，把真正属于项目的会话挤出窗口。
+    const registered = readRegisteredProjects();
+    const registeredFilterOn = registered.size > 0;
+    const sessions = registeredFilterOn
+      ? db.prepare(`
+          SELECT id, title, directory, time_created, time_updated
+          FROM session WHERE task_type = 'interactive'
+            AND directory IN (${[...registered].map(() => '?').join(',')})
+          ORDER BY time_updated DESC LIMIT 30
+        `).all(...registered)
+      : db.prepare(`
+          SELECT id, title, directory, time_created, time_updated
+          FROM session WHERE task_type = 'interactive'
+          ORDER BY time_updated DESC LIMIT 30
+        `).all();
 
     // 桌面端任务索引：状态标注 + 归档/删除过滤（与客户端左侧任务列表保持一致）
     const indexStatus = new Map();
@@ -349,7 +377,6 @@ function readClientTasks() {
       } catch { /* 可选 */ }
     }
     const hiddenSet = new Set(settings.hiddenSessions || []);
-
 
     clientTasks = sessions
       .filter((s) => !archivedSet.has(s.id) && !hiddenSet.has(s.id))
