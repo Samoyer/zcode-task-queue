@@ -1,0 +1,5 @@
+data/
+server.log
+test-report.md
+.DS_Store
+node_modules/

@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZCode 任务队列</title>
+<style>
+  :root {
+    --bg: #0e1014;
+    --panel: #161920;
+    --panel2: #1d212a;
+    --border: #262b36;
+    --border2: #313848;
+    --text: #e7eaf0;
+    --muted: #8b93a3;
+    --accent: #5e8bff;
+    --accent-dim: rgba(94,139,255,.12);
+    --green: #3ecf8e;
+    --green-dim: rgba(62,207,142,.1);
+    --red: #ff6363;
+    --red-dim: rgba(255,99,99,.08);
+    --yellow: #f0b03f;
+    --yellow-dim: rgba(240,176,63,.08);
+    --radius: 12px;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { color-scheme: dark; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 14px; line-height: 1.55;
+    padding: 20px 16px 64px;
+  }
+  .app { max-width: 860px; margin: 0 auto; }
+
+  /* ---------- 顶栏 ---------- */
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #3a4152; flex: none; transition: background 200ms ease, box-shadow 200ms ease; }
+  .dot.run { background: var(--green); box-shadow: 0 0 8px rgba(62,207,142,.7); }
+  .dot.pause { background: var(--yellow); }
+  h1 { font-size: 17px; font-weight: 700; letter-spacing: .2px; }
+  .sub { color: var(--muted); font-size: 12px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 5px; justify-content: center;
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+    transition: transform 160ms var(--ease-out), background 160ms ease, border-color 160ms ease, color 160ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) { .btn:hover { background: #232834; border-color: var(--border2); } }
+  .btn:active { transform: scale(0.97); }
+  .btn.primary { background: #3261d4; border-color: transparent; }
+  @media (hover: hover) and (pointer: fine) { .btn.primary:hover { background: #4a77ea; } }
+  .btn.danger:hover { border-color: var(--red); color: var(--red); }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn.ghost:hover { color: var(--text); background: var(--panel2); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+  }
+
+  /* ---------- 横幅 ---------- */
+  .banner {
+    font-size: 13px; color: var(--yellow); background: var(--yellow-dim);
+    border: 1px solid rgba(240,176,63,.25); border-radius: 10px;
+    padding: 8px 12px; margin-bottom: 12px;
+  }
+  .banner.red { color: var(--red); background: var(--red-dim); border-color: rgba(255,99,99,.25); }
+
+  /* ---------- 标签页 ---------- */
+  .tabs { display: flex; gap: 2px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 3px; margin-bottom: 14px; }
+  .tab {
+    flex: 1; position: relative; background: transparent; border: none; border-radius: 8px;
+    color: var(--muted); font-size: 13px; padding: 7px 0; cursor: pointer;
+    transition: color 150ms ease, background 150ms ease;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--panel2); color: var(--text); }
+  .tab .badge {
+    display: inline-block; min-width: 17px; margin-left: 5px; padding: 0 5px;
+    border-radius: 999px; background: var(--bg); border: 1px solid var(--border);
+    font-size: 11px; line-height: 16px; color: var(--muted);
+  }
+  .tab .badge.hot { color: var(--green); border-color: rgba(62,207,142,.4); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ---------- 卡片与列表 ---------- */
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .sec-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 2px 8px; }
+  .sec-head h2 { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .6px; }
+  .sec-head span { font-size: 12px; color: var(--muted); }
+  .empty { color: var(--muted); text-align: center; padding: 20px 0; font-size: 13px; }
+
+  .task { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; border: 1px solid transparent; }
+  .task:hover { background: var(--panel2); border-color: var(--border); }
+  .task + .task { margin-top: 4px; }
+  .tname { flex: 1; min-width: 0; overflow: hidden; }
+  .tname .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tname .e { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .e.err { color: var(--red); }
+  .e.act { color: var(--muted); }
+  .task .acts { display: none; gap: 4px; flex: none; }
+  .task:hover .acts { display: flex; }
+  .task .acts button { padding: 3px 8px; font-size: 12px; }
+  .btn-continue { color: var(--accent); border-color: rgba(94,139,255,.4); font-weight: 600; }
+  .idx { color: var(--muted); font-size: 12px; width: 18px; text-align: right; flex: none; }
+  .dur { color: var(--muted); font-size: 12px; flex: none; }
+  .typetag { color: var(--muted); font-size: 11px; }
+
+  .chip { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 9px; border-radius: 999px; color: var(--muted); background: var(--panel2); }
+  .chip::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .chip.pending  { color: #9fb6e8; background: rgba(94,139,255,.1); }
+  .chip.running, .chip.waiting { color: var(--green); background: var(--green-dim); }
+  .chip.done     { color: var(--green); background: var(--green-dim); }
+  .chip.failed   { color: var(--red); background: var(--red-dim); }
+  .chip.stopped, .chip.timeout { color: var(--yellow); background: var(--yellow-dim); }
+  .chip.completed { color: #9ad0f5; background: rgba(120,190,255,.08); }
+  .chip.error    { color: var(--red); background: var(--red-dim); }
+  .chip.idle     { color: var(--muted); }
+  .chip.stuck    { color: var(--yellow); background: var(--yellow-dim); }
+  .chip.plain::before { display: none; }
+
+  .todo-bar { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 11px; color: var(--muted); }
+  .todo-bar .track { width: 52px; height: 4px; border-radius: 2px; background: #262c3a; overflow: hidden; }
+  .todo-bar .fill { height: 100%; background: var(--green); border-radius: 2px; }
+
+  /* ---------- 当前任务 ---------- */
+  .running { border-color: rgba(94,139,255,.35); background: linear-gradient(180deg, rgba(94,139,255,.07), var(--panel)); }
+  .running .name { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 9px; }
+  .spinner {
+    width: 14px; height: 14px; border-radius: 50%; flex: none;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .activity {
+    margin-top: 10px; font-size: 13px; color: #b9c6e8;
+    background: var(--accent-dim); border: 1px solid rgba(94,139,255,.16);
+    border-radius: 8px; padding: 8px 10px; min-height: 20px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 8px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .result-block {
+    margin-top: 8px; background: var(--green-dim); border: 1px solid rgba(62,207,142,.25);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; color: #bfe8d4;
+    max-height: 150px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+  }
+
+  /* ---------- 项目分组 ---------- */
+  .group-header { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); padding: 12px 6px 4px; font-weight: 600; }
+  .group-header .bar { flex: 1; height: 1px; background: var(--border); }
+  .group-header:first-child { padding-top: 2px; }
+
+  /* ---------- 表单 ---------- */
+  input[type=text], input[type=number], textarea, select, input[type=time], input[type=password] {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 7px 10px; font-size: 13px; font-family: inherit;
+    transition: border-color 150ms ease;
+  }
+  textarea { min-height: 60px; resize: vertical; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+  label { font-size: 12px; color: var(--muted); display: block; margin: 10px 0 4px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 120px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .check { display: flex; align-items: center; gap: 7px; font-size: 13px; margin-top: 10px; cursor: pointer; }
+  .check input { width: auto; accent-color: var(--accent); }
+  .inline-time { width: 96px !important; flex: none !important; background: var(--bg); }
+
+  /* ---------- 守护行 ---------- */
+  .guard-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 2px; }
+  .guard-line + .guard-line { border-top: 1px solid var(--border); }
+  .glabel { flex: 1; min-width: 220px; }
+  .glabel b { font-size: 13px; font-weight: 600; display: block; }
+  .glabel span { font-size: 12px; color: var(--muted); }
+  .switch { position: relative; width: 38px; height: 21px; flex: none; cursor: pointer; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider { position: absolute; inset: 0; background: #2a3040; border-radius: 999px; transition: background 180ms ease; }
+  .switch .slider::before { content: ""; position: absolute; width: 15px; height: 15px; left: 3px; top: 3px; background: #8b93a5; border-radius: 50%; transition: transform 180ms var(--ease-out), background 180ms ease; }
+  .switch input:checked + .slider { background: rgba(62,207,142,.3); }
+  .switch input:checked + .slider::before { transform: translateX(17px); background: var(--green); }
+
+  /* ---------- 日志 ---------- */
+  .logbox {
+    background: #0a0c10; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px; max-height: 320px; overflow: auto;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; line-height: 1.55;
+    color: #9fb0cc; white-space: pre-wrap; word-break: break-all;
+  }
+
+  /* ---------- 模态 ---------- */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(6,8,12,.6); backdrop-filter: blur(3px);
+    display: flex; align-items: flex-start; justify-content: center; z-index: 50;
+    padding: 8vh 16px 16px; overflow: auto;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity 150ms ease, visibility 0s linear 150ms;
+  }
+  .overlay.show {
+    opacity: 1; visibility: visible; pointer-events: auto;
+    transition: opacity 180ms ease;
+  }
+  .overlay .modal {
+    width: 100%; max-width: 500px;
+    background: var(--panel); border: 1px solid var(--border2); border-radius: 14px;
+    padding: 18px; transform: scale(0.97); opacity: 0;
+    transition: transform 200ms var(--ease-out), opacity 200ms var(--ease-out);
+  }
+  .overlay.show .modal { transform: scale(1); opacity: 1; }
+  .overlay .modal h2 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .overlay .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translate(-50%, 16px); opacity: 0;
+    background: #222836; border: 1px solid var(--border2); border-radius: 10px;
+    padding: 9px 16px; font-size: 13px; z-index: 99; max-width: 80vw;
+    pointer-events: none;
+    transition: transform 200ms var(--ease-out), opacity 200ms var(--ease-out);
+  }
+  .toast.show { transform: translate(-50%, 0); opacity: 1; }
+
+  .badge-warn {
+    font-size: 13px; color: var(--yellow); background: var(--yellow-dim);
+    border: 1px solid rgba(240,180,69,.25); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px;
+  }
+  .badge-warn a { color: var(--yellow); }
+  .details-toggle { font-size: 12px; color: var(--accent); cursor: pointer; user-select: none; }
+  .details-toggle:hover { text-decoration: underline; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation-duration: 1.6s; }
+    .overlay, .overlay .modal, .toast, .btn, .dot, .switch .slider::before { transition-duration: 1ms; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" id="hdot"></span>
+      <div>
+        <h1>ZCode 任务队列</h1>
+        <div class="sub" id="hsub"></div>
+      </div>
+    </div>
+    <div class="btns" style="display:flex;gap:8px;">
+      <button id="btn-pause" class="btn">⏸ 暂停队列</button>
+      <button id="btn-settings" class="btn">⚙ 设置</button>
+    </div>
+  </header>
+
+  <div id="warn" class="banner" hidden></div>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="queue">任务队列<span class="badge" id="tb-queue" hidden></span></button>
+    <button class="tab" data-tab="sessions">客户端会话<span class="badge" id="tb-sessions" hidden></span></button>
+    <button class="tab" data-tab="guard">守护</button>
+  </nav>
+
+  <!-- 队列 -->
+  <section class="panel active" id="tab-queue">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+      <button class="btn primary" id="btn-newtask">＋ 新任务</button>
+    </div>
+
+    <div class="card running" id="running-card" hidden>
+      <div class="name"><span class="spinner"></span><span id="r-name"></span></div>
+      <div class="activity" id="r-activity"></div>
+      <div class="meta" id="r-meta"></div>
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn danger" id="btn-stop">■ 停止</button>
+        <button class="btn" id="btn-log-running">📋 日志</button>
+        <span class="hint" style="align-self:center;">停止 = 解除推进，会话保留在客户端</span>
+      </div>
+    </div>
+
+    <div class="sec-head"><h2>等待队列</h2><span id="pending-count"></span></div>
+    <div class="card" id="pending-list" style="padding:8px;"></div>
+
+    <div id="history-wrap">
+      <div class="sec-head">
+        <h2>已完成 / 失败</h2>
+        <button class="btn ghost" id="btn-clear" style="font-size:12px;padding:3px 10px;">清空历史</button>
+      </div>
+      <div class="card" id="done-list" style="padding:8px;"></div>
+    </div>
+  </section>
+
+  <!-- 客户端会话 -->
+  <section class="panel" id="tab-sessions">
+    <div class="sec-head" style="margin-top:0;"><h2>按项目分组 · 已排除归档</h2><span id="client-count"></span></div>
+    <div class="hint" style="margin-bottom:10px;">点「续跑」把会话加入队列：逐轮发送续跑话术，直到回复中出现「<span id="hint-marker"></span>」。</div>
+    <div class="card" id="client-list" style="padding:8px 16px;"></div>
+  </section>
+
+  <!-- 守护 -->
+  <section class="panel" id="tab-guard">
+    <div class="card">
+      <div class="guard-line">
+        <label class="switch"><input type="checkbox" id="g-sched-on"><span class="slider"></span></label>
+        <div class="glabel"><b>执行时段分流（谷时执行）</b><span id="g-sched-hint"></span></div>
+        <input type="time" class="inline-time" id="g-sched-start">
+        <span style="color:var(--muted)">至</span>
+        <input type="time" class="inline-time" id="g-sched-end">
+      </div>
+      <div class="guard-line">
+        <label class="switch"><input type="checkbox" id="g-stop-on"><span class="slider"></span></label>
+        <div class="glabel"><b>每日自动停止客户端</b><span id="g-stop-hint"></span></div>
+        <input type="time" class="inline-time" id="g-stop-time">
+        <button class="btn danger" id="btn-guard-stop-now">立即停止</button>
+      </div>
+      <div class="guard-line">
+        <label class="switch"><input type="checkbox" id="g-enable-on"><span class="slider"></span></label>
+        <div class="glabel"><b>每日自动启用客户端</b><span>到点拉起 ZCode，一分钟后自动恢复队列</span></div>
+        <input type="time" class="inline-time" id="g-enable-time">
+        <button class="btn" id="btn-guard-enable-now">立即启用</button>
+      </div>
+      <div class="guard-line">
+        <label class="switch"><input type="checkbox" id="g-focus-on"><span class="slider"></span></label>
+        <div class="glabel"><b>派发时切换到对应工作区</b><span>用 zcode:// 深链把客户端带到任务的项目窗口</span></div>
+      </div>
+    </div>
+    <div class="hint">执行参数（模型、续跑话术、完成标记、轮数等）在右上角「⚙ 设置」里调整。</div>
+  </section>
+</div>
+
+<!-- 设置模态 -->
+<div class="overlay" id="settings-modal">
+  <div class="modal">
+    <h2>⚙ 执行参数</h2>
+    <div class="hint" style="margin:0 0 4px;">任务在 ZCode 客户端内执行，使用客户端自身的登录与套餐；请保持客户端运行。</div>
+    <div class="row">
+      <div>
+        <label>模型套餐</label>
+        <select id="s-plan"></select>
+      </div>
+      <div>
+        <label>模型</label>
+        <select id="s-model"></select>
+      </div>
+    </div>
+    <label>续跑话术（每轮发给会话的内容）</label>
+    <textarea id="s-continue-prompt"></textarea>
+    <div class="row">
+      <div>
+        <label>完成标记</label>
+        <input type="text" id="s-completion-marker">
+      </div>
+      <div>
+        <label>最大续跑轮数</label>
+        <input type="number" id="s-max-rounds" min="1" max="200">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>无输出判卡（分钟）</label>
+        <input type="number" id="s-stall" min="3" max="180">
+      </div>
+      <div>
+        <label>任务间隔（秒）</label>
+        <input type="number" id="s-interval" min="0">
+      </div>
+      <div>
+        <label>默认超时（分钟）</label>
+        <input type="number" id="s-timeout" min="0">
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="s-stoponfail"> 任务失败后暂停整个队列</label>
+    <div class="foot">
+      <button id="btn-settings-cancel">取消</button>
+      <button class="primary btn" id="btn-settings-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新任务模态 -->
+<div class="overlay" id="newtask-modal">
+  <div class="modal">
+    <h2>＋ 新任务</h2>
+    <div class="hint" style="margin:0 0 4px;">推进已有会话请到「客户端会话」标签页点「续跑」。</div>
+    <div class="row">
+      <div>
+        <label>类型</label>
+        <select id="f-type">
+          <option value="zcode">ZCode 新任务</option>
+          <option value="shell">Shell 命令</option>
+        </select>
+      </div>
+      <div>
+        <label>名称（可选）</label>
+        <input type="text" id="f-name" placeholder="默认取第一行内容">
+      </div>
+      <div>
+        <label>超时（分钟）</label>
+        <input type="number" id="f-timeout" min="0" placeholder="0">
+      </div>
+    </div>
+    <label>提示词</label>
+    <textarea id="f-prompt" placeholder="要交给 ZCode 客户端执行的任务描述…"></textarea>
+    <label>工作目录（可选）</label>
+    <input type="text" id="f-cwd" placeholder="/path/to/project">
+    <label class="check"><input type="checkbox" id="f-batch"> 批量模式：按行拆分，每行一个任务</label>
+    <div class="foot">
+      <button id="btn-newtask-cancel">取消</button>
+      <button class="primary btn" id="btn-add">加入队列</button>
+    </div>
+  </div>
+</div>
+
+<!-- 日志模态 -->
+<div class="overlay" id="log-modal">
+  <div class="modal">
+    <h2 style="display:flex;justify-content:space-between;align-items:center;">
+      <span id="log-title">日志</span>
+      <span class="details-toggle" id="log-close">关闭 ✕</span>
+    </h2>
+    <div class="logbox" id="logbox"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let S = null;
+let curTab = 'queue';
+let logTaskId = null, logTimer = null;
+let openLogIds = new Set();
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+async function api(path, body) {
+  const opt = body
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ZTQ-Local': '1' }, body: JSON.stringify(body) }
+    : {};
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+const STATUS_TEXT = { pending: '等待中', running: '执行中', waiting: '等待接单', done: '已完成', failed: '失败', stopped: '已停止', timeout: '超时' };
+const TYPE_TEXT = { continue: '续跑', zcode: '新任务', shell: 'shell' };
+function fmtDur(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + ' 秒';
+  const m = Math.floor(s / 60), r = s % 60;
+  if (m < 60) return m + ' 分 ' + r + ' 秒';
+  return Math.floor(m / 60) + ' 时 ' + (m % 60) + ' 分';
+}
+function fmtAgo(ts) {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return '刚刚';
+  if (s < 3600) return Math.floor(s / 60) + ' 分钟前';
+  if (s < 86400) return Math.floor(s / 3600) + ' 小时前';
+  return Math.floor(s / 86400) + ' 天前';
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ---------------- 渲染 ----------------
+
+function render() {
+  if (!S) return;
+  const running = S.tasks.find((t) => t.id === S.runningId);
+
+  $('hdot').className = 'dot ' + (running ? 'run' : S.paused ? 'pause' : '');
+  $('hsub').textContent = running
+    ? '正在推进：' + running.name
+    : S.paused ? '队列已暂停' : '逐个续跑客户端会话 · 前一个完成，后一个自动顶上';
+  $('btn-pause').textContent = S.paused ? '▶ 恢复队列' : '⏸ 暂停队列';
+
+  // 横幅
+  const warn = $('warn');
+  const schedOn = S.settings.scheduleEnabled;
+  const pendingN = S.tasks.filter((t) => t.status === 'pending').length;
+  if (S.clientPathsFound === false) {
+    warn.hidden = false; warn.className = 'banner red';
+    warn.textContent = '⚠ 未找到 ZCode 客户端数据目录，请确认客户端安装并运行过';
+  } else if (schedOn && !S.settings.windowOpen) {
+    warn.hidden = false; warn.className = 'banner';
+    warn.innerHTML = `⏳ 当前不在执行时段（${esc(S.settings.scheduleStart)}–${esc(S.settings.scheduleEnd)}）${pendingN ? `，${pendingN} 个任务排队等待` : ''}，进入时段后将自动开始执行`;
+  } else warn.hidden = true;
+
+  // 标签徽标
+  const qn = S.tasks.filter((t) => ['pending', 'running', 'waiting'].includes(t.status)).length;
+  $('tb-queue').hidden = !qn; $('tb-queue').textContent = qn;
+  $('tb-queue').className = 'badge' + (running ? ' hot' : '');
+  const ct = S.clientTasks || [];
+  $('tb-sessions').hidden = !ct.length; $('tb-sessions').textContent = ct.length;
+
+  // 守护面板
+  $('g-sched-on').checked = !!schedOn;
+  $('g-sched-start').value = S.settings.scheduleStart || '23:00';
+  $('g-sched-end').value = S.settings.scheduleEnd || '09:00';
+  $('g-sched-hint').textContent = schedOn
+    ? (S.settings.windowOpen ? `时段内，任务正常派发（${S.settings.scheduleStart}–${S.settings.scheduleEnd}）` : '时段外：任务只排队不派发，进入时段后自动开始')
+    : '未启用：任务加入队列后立即派发执行';
+  $('g-stop-on').checked = !!S.settings.autoStopEnabled;
+  $('g-stop-time').value = S.settings.autoStopTime || '08:55';
+  $('g-stop-hint').textContent = S.guardScriptFound
+    ? '到点调用夜间守护脚本退出 ZCode（含后台会话），队列自动暂停'
+    : '到点按内置逻辑退出 ZCode（未找到守护脚本），队列自动暂停';
+  $('g-enable-on').checked = !!S.settings.autoEnableEnabled;
+  $('g-enable-time').value = S.settings.autoEnableTime || '23:00';
+  $('g-focus-on').checked = !!S.settings.focusOnDispatch;
+
+  // 当前任务
+  const rc = $('running-card');
+  if (running) {
+    rc.hidden = false;
+    $('r-name').textContent = running.name;
+    $('r-activity').textContent = running.activity || '…';
+    const parts = [`⏱ ${fmtDur((S.runningElapsedSec || 0) * 1000)}`, `type ${TYPE_TEXT[running.type] || running.type}`];
+    if (running.type === 'continue') parts.push(`🔁 第 ${(running.round || 0) + 1} 轮 / 上限 ${S.settings.maxRounds}`);
+    if (running.sessionId) parts.push('🆔 ' + running.sessionId.slice(0, 18) + '…');
+    if (running.usage && running.usage.turns) parts.push('📋 todo ' + running.usage.turns);
+    $('r-meta').innerHTML = parts.map(esc).join('&nbsp;&nbsp;·&nbsp;&nbsp;');
+  } else rc.hidden = true;
+
+  renderQueue();
+  renderHistory();
+  renderClients();
+}
+
+function renderQueue() {
+  const pending = S.tasks.filter((t) => t.status === 'pending');
+  $('pending-count').textContent = pending.length ? pending.length + ' 个待执行' : '';
+  const pl = $('pending-list');
+  pl.innerHTML = pending.length
+    ? pending.map((t, i) => `
+      <div class="task">
+        <span class="idx">${i + 1}.</span>
+        <span class="chip plain">${TYPE_TEXT[t.type] || t.type}</span>
+        <div class="tname"><div class="n">${esc(t.name)}</div></div>
+        <div class="acts">
+          <button title="立即执行（忽略时段限制）" onclick="taskAction('${t.id}','runNow')">▶</button>
+          <button title="移到最前" onclick="taskAction('${t.id}','top')">⤒</button>
+          <button title="上移" onclick="taskAction('${t.id}','up')">↑</button>
+          <button title="下移" onclick="taskAction('${t.id}','down')">↓</button>
+          <button title="删除" onclick="taskAction('${t.id}','remove')">🗑</button>
+        </div>
+      </div>`).join('')
+    : '<div class="empty">队列为空 — 到「客户端会话」点「续跑」，或用右上角「＋ 新任务」</div>';
+}
+
+function renderHistory() {
+  const done = S.tasks.filter((t) => ['done', 'failed', 'stopped', 'timeout'].includes(t.status));
+  const dl = $('done-list');
+  $('history-wrap').style.display = done.length ? '' : 'none';
+  if (!done.length) { dl.innerHTML = ''; return; }
+  dl.innerHTML = done.map((t) => {
+    const dur = t.finishedAt && t.startedAt ? fmtDur(t.finishedAt - t.startedAt) : '';
+    const open = openLogIds.has(t.id);
+    return `
+    <div class="task">
+      <span class="chip ${t.status}">${STATUS_TEXT[t.status] || t.status}</span>
+      <div class="tname">
+        <div class="n">${esc(t.name)} <span class="typetag">${TYPE_TEXT[t.type] || ''}${t.round ? ' · ' + t.round + ' 轮' : ''}</span></div>
+        ${t.error ? `<div class="e err" title="${esc(t.error)}">${esc(t.error)}</div>` : ''}
+        ${open && t.result ? `<div class="result-block">${esc(t.result)}</div>` : ''}
+      </div>
+      <span class="dur">${dur}</span>
+      <div class="acts">
+        <button title="查看日志" onclick="toggleLog('${t.id}')">📋</button>
+        ${t.result ? `<button title="查看完成报告" onclick="showResult('${t.id}')">📄</button>` : ''}
+        <button title="重试" onclick="taskAction('${t.id}','retry')">↻</button>
+        <button title="删除" onclick="taskAction('${t.id}','remove')">🗑</button>
+      </div>
+    </div>
+    ${open ? `<div class="logbox" style="margin:4px 0 8px;" id="log-${t.id}">加载中…</div>` : ''}`;
+  }).join('');
+  for (const id of openLogIds) if (done.some((t) => t.id === id)) loadLogInto(id);
+}
+
+function renderClients() {
+  const cl = $('client-list');
+  $('hint-marker').textContent = S.settings.completionMarker || '全部完成';
+  if (S.clientTasksError) {
+    cl.innerHTML = `<div class="empty" style="color:var(--red)">⚠ ${esc(S.clientTasksError)}</div>`;
+    $('client-count').textContent = '';
+    return;
+  }
+  const ct = S.clientTasks || [];
+  const activeN = ct.filter((t) => t.status === 'running').length;
+  $('client-count').textContent = ct.length
+    ? (activeN ? `${activeN} 个进行中 · ` : '') + `共 ${ct.length} 个`
+    : '';
+  if (!ct.length) { cl.innerHTML = '<div class="empty">未读到客户端会话</div>'; return; }
+
+  const groups = [];
+  const byDir = new Map();
+  for (const t of ct) {
+    const dir = t.directory || '(未知项目)';
+    if (!byDir.has(dir)) { const g = { dir, items: [] }; byDir.set(dir, g); groups.push(g); }
+    byDir.get(dir).items.push(t);
+  }
+  cl.innerHTML = groups.map((g) => {
+    const dirName = g.dir.split('/').filter(Boolean).pop() || g.dir;
+    const gRun = g.items.filter((t) => t.status === 'running').length;
+    return `
+    <div class="group-header">📁 ${esc(dirName)} <span style="font-weight:400">${g.items.length} 个${gRun ? ` · ${gRun} 个进行中` : ''}</span><span class="bar"></span></div>
+    ${g.items.map((t) => {
+      const chip = { running: '进行中', completed: '已完成', error: '出错', idle: '空闲', stuck: '卡住' }[t.status] || t.status;
+      const cls = { running: 'running', completed: 'completed', error: 'error', idle: 'idle', stuck: 'stuck' }[t.status] || 'idle';
+      const todo = t.todos && t.todos.total
+        ? `<span class="todo-bar"><span class="track"><span class="fill" style="width:${Math.round(100 * t.todos.done / t.todos.total)}%"></span></span>${t.todos.done}/${t.todos.total}</span>`
+        : '';
+      return `
+      <div class="task">
+        <span class="chip ${cls}">${chip}</span>
+        <div class="tname">
+          <div class="n">${esc(t.title || '(无标题)')}</div>
+          ${t.lastActivity ? `<div class="e act">${esc(t.lastActivity)}</div>` : ''}
+        </div>
+        ${todo}
+        <span class="dur">${fmtAgo(t.timeUpdated)}</span>
+        <div class="acts">
+          <button class="btn-continue" title="在原会话中继续推进，直到收到「${esc(S.settings.completionMarker)}」" onclick="continueClient('${t.sessionId}')">▶ 续跑</button>
+          <button title="提取原始提示词，开一个全新会话从头重跑（不带原会话上下文）" onclick="importClient('${t.sessionId}')">🆕 重开</button>
+          <button title="只从这个面板隐藏（不影响客户端里的会话）" onclick="hideClient('${t.sessionId}')">✕</button>
+        </div>
+      </div>`;
+    }).join('')}`;
+  }).join('');
+}
+
+function showResult(id) {
+  const t = (S.tasks || []).find((x) => x.id === id);
+  if (t) alert((t.result || '').slice(0, 3000) || '（无报告内容）');
+}
+
+// ---------------- 日志 ----------------
+
+async function loadLogInto(taskId) {
+  try {
+    const j = await api('/api/tasks/log?id=' + taskId);
+    const box = taskId === logTaskId ? $('logbox') : $('log-' + taskId);
+    if (!box) return;
+    const lines = j.logs || [];
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.textContent = lines.length ? lines.slice(-300).join('\n') : '（暂无日志）';
+    if (atBottom || box._first) box.scrollTop = box.scrollHeight;
+    box._first = false;
+  } catch {}
+}
+
+function openLog(taskId, title) {
+  logTaskId = taskId;
+  $('log-modal').classList.add('show');
+  $('log-title').textContent = '日志 · ' + (title || taskId);
+  $('logbox')._first = true;
+  loadLogInto(taskId);
+  clearInterval(logTimer);
+  logTimer = setInterval(() => { if (logTaskId) loadLogInto(logTaskId); }, 1500);
+}
+function closeLog() { logTaskId = null; $('log-modal').classList.remove('show'); clearInterval(logTimer); }
+function toggleLog(taskId) {
+  if (openLogIds.has(taskId)) openLogIds.delete(taskId);
+  else openLogIds.add(taskId);
+  render();
+}
+
+// ---------------- 操作 ----------------
+
+async function taskAction(id, action) {
+  try { await api(`/api/tasks/${id}/action`, { action }); }
+  catch (e) { toast('操作失败: ' + e.message); }
+}
+async function continueClient(sessionId) {
+  try {
+    const j = await api('/api/client-tasks/continue', { sessionId });
+    switchTab('queue');
+    toast(`已把「${j.name}」加入续跑队列`);
+  } catch (e) { toast('续跑失败: ' + e.message); }
+}
+async function importClient(sessionId) {
+  if (!confirm('「重开」会提取原始提示词，开一个【全新会话】从头重跑——不带原会话的上下文与进度。\n\n要在原会话中继续，请改用「▶ 续跑」。\n\n确定重开吗？')) return;
+  try {
+    const j = await api('/api/client-tasks/import', { sessionId });
+    toast(`已重开：「${j.name}」作为新任务加入队列`);
+  } catch (e) { toast('失败: ' + e.message); }
+}
+async function hideClient(sessionId) {
+  try { await api('/api/client-tasks/hide', { sessionId }); toast('已从面板隐藏（客户端会话不受影响）'); }
+  catch (e) { toast('失败: ' + e.message); }
+}
+
+$('btn-pause').onclick = () => api('/api/queue', { action: S.paused ? 'resume' : 'pause' }).catch((e) => toast(e.message));
+$('btn-stop').onclick = () => api('/api/queue', { action: 'stopCurrent' }).catch((e) => toast(e.message));
+$('btn-log-running').onclick = () => { if (S && S.runningId) openLog(S.runningId, '当前任务'); };
+$('btn-clear').onclick = () => api('/api/queue', { action: 'clearFinished' }).catch((e) => toast(e.message));
+$('log-close').onclick = closeLog;
+
+// 守护
+async function saveGuard(patch) {
+  try { await api('/api/config', patch); }
+  catch (e) { toast('保存失败: ' + e.message); }
+}
+$('g-sched-on').onchange = (e) => saveGuard({ scheduleEnabled: e.target.checked });
+$('g-sched-start').onchange = (e) => saveGuard({ scheduleStart: e.target.value });
+$('g-sched-end').onchange = (e) => saveGuard({ scheduleEnd: e.target.value });
+$('g-stop-on').onchange = (e) => saveGuard({ autoStopEnabled: e.target.checked });
+$('g-stop-time').onchange = (e) => saveGuard({ autoStopTime: e.target.value });
+$('g-enable-on').onchange = (e) => saveGuard({ autoEnableEnabled: e.target.checked });
+$('g-enable-time').onchange = (e) => saveGuard({ autoEnableTime: e.target.value });
+$('g-focus-on').onchange = (e) => saveGuard({ focusOnDispatch: e.target.checked });
+$('btn-guard-stop-now').onclick = async () => {
+  if (!confirm('确定立即退出 ZCode 客户端？\n\n· 正在运行的任务由客户端自动存档，之后可续跑\n· 队列将自动暂停（重新打开客户端后手动恢复，或等自动启用）\n· 注意：当前正在对话的 ZCode 会话也会一起退出')) return;
+  try {
+    const r = await api('/api/guard', { action: 'stopClient' });
+    toast(r.stopped === false ? 'ZCode 未在运行' : '退出指令已执行，客户端正在关闭');
+  } catch (e) { toast('失败: ' + e.message); }
+};
+$('btn-guard-enable-now').onclick = async () => {
+  try {
+    const r = await api('/api/guard', { action: 'enableClient' });
+    if (r && r.ok === false) toast('拉起失败: ' + (r.error || '未知错误'));
+    else toast('已拉起 ZCode 客户端');
+  } catch (e) { toast('失败: ' + e.message); }
+};
+
+// 设置模态
+function fillPlanSelect() {
+  const plans = S.plans || {};
+  $('s-plan').innerHTML = Object.entries(plans).map(([id, p]) =>
+    `<option value="${id}" ${id === S.settings.plan ? 'selected' : ''}>${p.label}</option>`).join('');
+  fillModelSelect();
+}
+function fillModelSelect() {
+  const models = (S.planModels || {})[$('s-plan').value] || [];
+  const cur = S.settings.model;
+  $('s-model').innerHTML = models.map((m) => `<option value="${m}" ${m === cur ? 'selected' : ''}>${m}</option>`).join('');
+  if (!models.includes(cur) && cur) $('s-model').innerHTML += `<option value="${cur}" selected>${cur}</option>`;
+}
+function openSettings() {
+  fillPlanSelect();
+  $('s-continue-prompt').value = S.settings.continuePrompt || '';
+  $('s-completion-marker').value = S.settings.completionMarker || '';
+  $('s-max-rounds').value = S.settings.maxRounds ?? 20;
+  $('s-stall').value = S.settings.stallMin ?? 15;
+  $('s-interval').value = S.settings.intervalSec ?? 5;
+  $('s-timeout').value = S.settings.defaultTimeoutMin ?? 0;
+  $('s-stoponfail').checked = !!S.settings.stopOnFail;
+  $('settings-modal').classList.add('show');
+}
+$('s-plan').onchange = fillModelSelect;
+$('btn-settings').onclick = openSettings;
+$('btn-settings-cancel').onclick = () => $('settings-modal').classList.remove('show');
+$('btn-settings-save').onclick = async () => {
+  try {
+    await api('/api/config', {
+      plan: $('s-plan').value,
+      model: $('s-model').value,
+      continuePrompt: $('s-continue-prompt').value,
+      completionMarker: $('s-completion-marker').value,
+      maxRounds: Number($('s-max-rounds').value) || 20,
+      stallMin: Number($('s-stall').value) || 15,
+      intervalSec: Number($('s-interval').value) || 0,
+      defaultTimeoutMin: Number($('s-timeout').value) || 0,
+      stopOnFail: $('s-stoponfail').checked,
+    });
+    $('settings-modal').classList.remove('show');
+    toast('设置已保存');
+  } catch (e) { toast('保存失败: ' + e.message); }
+};
+document.querySelectorAll('.overlay').forEach((o) => {
+  o.onclick = (e) => { if (e.target === o) o.classList.remove('show'); };
+});
+
+// 新任务模态
+$('btn-newtask').onclick = () => $('newtask-modal').classList.add('show');
+$('btn-newtask-cancel').onclick = () => $('newtask-modal').classList.remove('show');
+$('btn-add').onclick = async () => {
+  const prompt = $('f-prompt').value.trim();
+  if (!prompt) return toast('请输入任务内容');
+  try {
+    const j = await api('/api/tasks', {
+      type: $('f-type').value,
+      name: $('f-name').value,
+      prompt,
+      batch: $('f-batch').checked ? prompt : null,
+      cwd: $('f-cwd').value,
+      timeoutMin: Number($('f-timeout').value) || null,
+    });
+    $('f-prompt').value = ''; $('f-name').value = ''; $('f-timeout').value = '';
+    $('newtask-modal').classList.remove('show');
+    toast(j.created > 1 ? `已加入 ${j.created} 个任务` : '已加入队列');
+  } catch (e) { toast('添加失败: ' + e.message); }
+};
+
+// 标签页
+function switchTab(name) {
+  curTab = name;
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'tab-' + name));
+}
+document.querySelectorAll('.tab').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
+
+// ---------------- 状态获取：SSE + 轮询兜底 ----------------
+
+function applyState(st) {
+  S = st;
+  render();
+  if (S.runningId && !logTaskId && $('log-modal').classList.contains('show')) openLog(S.runningId, '当前任务');
+}
+
+function connectSSE() {
+  const es = new EventSource('/api/events');
+  es.onmessage = (e) => { try { applyState(JSON.parse(e.data)); } catch {} };
+  es.onerror = () => { es.close(); setTimeout(connectSSE, 3000); };
+}
+setInterval(async () => { try { applyState(await api('/api/state')); } catch {} }, 5000);
+
+connectSSE();
+api('/api/state').then(applyState).catch(() => toast('无法连接服务'));
+</script>
+</body>
+</html>
