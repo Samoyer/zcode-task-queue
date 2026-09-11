@@ -14,7 +14,7 @@
  *  - 模型/套餐：automation.model = “<套餐provider>/<模型ID>”。套餐分体验套餐
  *    （builtin:bigmodel-start-plan）与个人套餐（builtin:bigmodel-coding-plan），
  *    模型列表从客户端 v2/config.json 读取。
- *  - 自动停止/启用：可配置每日定时——停止=退出 ZCode 客户端（逻辑同 zcode-night-guard，
+ *  - 自动停止/启用：可配置每日定时——停止=退出 ZCode 客户端（可选复用自定义守护脚本，
  *    优先调用该脚本，缺失时内置兜底），启用=open -a ZCode 拉起客户端。停止时自动暂停队列。
  *
  * 实时进度：只读打开客户端会话库（~/.zcode/cli/db/db.sqlite），展示运行中会话的
@@ -128,7 +128,7 @@ const DEFAULT_SETTINGS = {
   maxRounds: 20,                                   // 单任务最大续跑轮数
   stallMin: 15,                                   // 已接单但会话无输出多少分钟后判卡
   autoStopEnabled: false,
-  autoStopTime: '08:55',          // 每日自动停止客户端（对齐夜间守护）
+  autoStopTime: '08:55',          // 每日自动停止客户端（对齐自定义守护脚本）
   autoEnableEnabled: false,
   autoEnableTime: '23:00',        // 每日自动拉起客户端（夜间免费时段开始）
   focusOnDispatch: false,         // 派发时把客户端切到对应工作区（zcode:// 深链）
@@ -493,7 +493,7 @@ function zcodePids() {
 /**
  * 停止 ZCode 客户端（内置逻辑，不受时间窗/忽略文件限制——手动点击是明确意图）：
  * 先给全部相关进程发 SIGTERM 让主程序存档退出，最多等 20 秒，残留的 SIGKILL 兜底。
- * 每日定时的自动停止走 guardTick → 夜间守护脚本（带 08:55–09:30 窗口与忽略文件校验）。
+ * 每日定时的自动停止走 guardTick → 自定义守护脚本（若存在，自带窗口与忽略文件校验）。
  */
 function stopClient(dryRun = false) {
   const pids = zcodePids();
@@ -514,7 +514,7 @@ function stopClient(dryRun = false) {
   return { stopped: gone, count: pids.length };
 }
 
-/** 每日定时的自动停止：优先复用夜间守护脚本（它自带窗口/日期/忽略文件校验与通知） */
+/** 每日定时的自动停止：优先复用自定义守护脚本（若存在） */
 function scheduledStop() {
   if (fs.existsSync(GUARD_SCRIPT)) {
     try {

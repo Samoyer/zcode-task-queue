@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.smjitdxp.zcode-task-queue</string>
+    <string>com.zcode-task-queue</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>

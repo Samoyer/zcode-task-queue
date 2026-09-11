@@ -510,7 +510,7 @@ function render() {
   $('g-stop-on').checked = !!S.settings.autoStopEnabled;
   $('g-stop-time').value = S.settings.autoStopTime || '08:55';
   $('g-stop-hint').textContent = S.guardScriptFound
-    ? '到点调用夜间守护脚本退出 ZCode（含后台会话），队列自动暂停'
+    ? '到点调用自定义守护脚本退出 ZCode（含后台会话），队列自动暂停'
     : '到点按内置逻辑退出 ZCode（未找到守护脚本），队列自动暂停';
   $('g-enable-on').checked = !!S.settings.autoEnableEnabled;
   $('g-enable-time').value = S.settings.autoEnableTime || '23:00';

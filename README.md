@@ -1,5 +1,7 @@
 # ZCode 任务队列
 
+[English](README.en.md) | 中文
+
 一个带 Web 页面的 **ZCode 会话排队推进器**：把客户端里已有的会话逐个加入队列，脚本用固定话术（默认"继续，如果这项完成好了，告诉我全部完成，并给出完成报告。"）一轮轮推进，收到「全部完成」标记即判完成并自动顶上**下一个会话**——专为 GLM 套餐的并发限制设计，同一时间只推进一个会话。
 
 ![启动](https://img.shields.io/badge/零依赖-Node%20%E2%89%A5%2022-blue)
@@ -67,9 +69,9 @@ GLM 套餐有任务并发限制，**你自己在客户端里正在跑的会话�
 
 ```bash
 mkdir -p ~/Library/LaunchAgents
-cp launchd/com.smjitdxp.zcode-task-queue.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.smjitdxp.zcode-task-queue.plist
-# 卸载: launchctl unload ~/Library/LaunchAgents/com.smjitdxp.zcode-task-queue.plist
+cp launchd/com.zcode-task-queue.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.zcode-task-queue.plist
+# 卸载: launchctl unload ~/Library/LaunchAgents/com.zcode-task-queue.plist
 ```
 </details>
 
@@ -104,3 +106,7 @@ zcode-task-queue/
 ├── public/index.html
 └── data/            # tasks.json / settings.json（自动生成）
 ```
+
+## License
+
+[MIT](LICENSE)
