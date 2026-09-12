@@ -145,6 +145,7 @@ let settings = { ...DEFAULT_SETTINGS };
 /** @type {Array<any>} */
 let tasks = [];
 let paused = false;
+let pausedBySystem = false;   // true = 由"自动停止客户端"设置；仅自动启用可解除，避免覆盖用户手动暂停
 let nextTimer = null;
 let current = null;    // { taskId, kind, child?, startedAt, timeoutHandle, pollHandle, automationId, dispatchedAt, baselineMsgTime, round }
 let clientPaths = detectClientPaths();
@@ -575,6 +576,7 @@ function guardTick() {
     guardState.stopLastDate = today;
     log('⏰ 自动停止客户端触发');
     paused = true;
+    pausedBySystem = true;
     clearTimeout(nextTimer);
     scheduledStop();
     broadcast();
@@ -583,8 +585,15 @@ function guardTick() {
     guardState.enableLastDate = today;
     log('⏰ 自动启用客户端触发');
     enableClient();
-    // 给客户端一点启动时间再恢复队列
-    setTimeout(() => { paused = false; broadcast(); kick(); }, 60 * 1000);
+    // 给客户端一点启动时间再恢复队列；仅解除"系统暂停"，用户手动暂停不被覆盖
+    setTimeout(() => {
+      if (paused && pausedBySystem) {
+        paused = false;
+        pausedBySystem = false;
+        log('▶ 队列已随客户端启用自动恢复（系统暂停解除）');
+      }
+      broadcast(); kick();
+    }, 60 * 1000);
     broadcast();
   }
   // 执行时段切换沿：进入时段自动开跑，离开时段停止派发新任务
@@ -1091,8 +1100,8 @@ async function handleAPI(req, res, pathname) {
 
   if (seg[0] === 'api' && seg[1] === 'queue' && req.method === 'POST') {
     const body = await readBody(req);
-    if (body.action === 'pause') { paused = true; clearTimeout(nextTimer); log('⏸ 队列已暂停'); }
-    else if (body.action === 'resume') { paused = false; log('▶ 队列已恢复'); kick(); }
+    if (body.action === 'pause') { paused = true; pausedBySystem = false; clearTimeout(nextTimer); log('⏸ 队列已暂停'); }
+    else if (body.action === 'resume') { paused = false; pausedBySystem = false; log('▶ 队列已恢复'); kick(); }
     else if (body.action === 'clearFinished') {
       tasks = tasks.filter((t) => ![TASK_STATUS.DONE, TASK_STATUS.FAILED, TASK_STATUS.STOPPED, TASK_STATUS.TIMEOUT].includes(t.status));
     }

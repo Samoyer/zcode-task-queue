@@ -33,6 +33,13 @@ log ""
 
 curl -s "$BASE/api/state" > /dev/null 2>&1 || { log "❌ 服务未运行（node server.js）"; printf '%s' "$REPORT" > test-report.md; exit 1; }
 
+# 队列可能处于暂停态（如昨晚自动停止遗留）——测试需要运行态，结束时恢复原状
+SAVED_PAUSED=$(state_field "s.paused")
+if [ "$SAVED_PAUSED" = "true" ]; then
+  api queue '{"action":"resume"}' > /dev/null
+  log "- 检测到队列处于暂停态，已临时恢复运行（测试结束还原）"
+fi
+
 # 保存用户的时段配置，测试期间临时关闭（用例3 自行开关时段验证门控）
 SAVED=$(state_field "JSON.stringify({scheduleEnabled:s.settings.scheduleEnabled,scheduleStart:s.settings.scheduleStart,scheduleEnd:s.settings.scheduleEnd})")
 case "$SAVED" in \{*scheduleEnabled*\}) ;; *) SAVED='{"scheduleEnabled":false,"scheduleStart":"23:00","scheduleEnd":"09:00"}' ;; esac
@@ -84,6 +91,12 @@ api config "$SAVED" > /dev/null
 for t in $(state_field "s.tasks.filter(t=>t.name.startsWith('smoke-')).map(t=>t.id).join(' ')"); do
   api "tasks/$t/action" '{"action":"remove"}' > /dev/null
 done
+
+# 还原队列暂停态
+if [ "$SAVED_PAUSED" = "true" ]; then
+  api queue '{"action":"pause"}' > /dev/null
+  log "- 已还原队列为暂停态"
+fi
 
 log ""
 log "## 汇总"
