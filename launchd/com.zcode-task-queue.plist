@@ -2,21 +2,51 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>com.zcode-task-queue</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/zsh</string>
-        <string>-lc</string>
-        <string>cd '/REPLACE/WITH/zcode-task-queue' &amp;&amp; exec node server.js</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
+  <key>Label</key>
+  <string>__ZTQ_LABEL__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__ZTQ_NODE__</string>
+    <string>__ZTQ_SERVER__</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__ZTQ_ROOT__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__ZTQ_HOME__</string>
+    <key>ZTQ_HOME_DIR</key>
+    <string>__ZTQ_HOME_DIR__</string>
+    <key>ZTQ_HOST</key>
+    <string>__ZTQ_HOST__</string>
+    <key>ZTQ_PORT</key>
+    <string>__ZTQ_PORT__</string>
+    <key>ZTQ_DATA_DIR</key>
+    <string>__ZTQ_DATA_DIR__</string>
+    <key>ZTQ_PID_FILE</key>
+    <string>__ZTQ_PID_FILE__</string>
+    <key>ZTQ_READY_FILE</key>
+    <string>__ZTQ_READY_FILE__</string>
+    <key>ZTQ_LOG_FILE</key>
+    <string>__ZTQ_LOG_FILE__</string>
+    <!-- __ZTQ_EXTRA_ENV__ -->
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
     <false/>
-    <key>StandardOutPath</key>
-    <string>/REPLACE/WITH/zcode-task-queue/server.log</string>
-    <key>StandardErrorPath</key>
-    <string>/REPLACE/WITH/zcode-task-queue/server.log</string>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>Umask</key>
+  <integer>63</integer>
+  <key>StandardOutPath</key>
+  <string>__ZTQ_STDOUT_FILE__</string>
+  <key>StandardErrorPath</key>
+  <string>__ZTQ_STDERR_FILE__</string>
 </dict>
 </plist>

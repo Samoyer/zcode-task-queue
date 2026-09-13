@@ -1,0 +1,15 @@
+{
+  "name": "zcode-task-queue",
+  "version": "2.0.0",
+  "private": true,
+  "description": "A local, crash-safe queue for advancing ZCode sessions one at a time.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "check": "node --check server.js && node --check public/app.js && node --check launchd/render.js && node --check lib/core.js && node --check lib/client-db.js && node --check lib/queue-runtime.js && node --check lib/state-store.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "test:smoke": "./smoke-test.sh"
+  }
+}
