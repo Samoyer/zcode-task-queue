@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-A loopback-only queue for advancing ZCode sessions one at a time. It resumes existing sessions, creates new ZCode tasks, runs local shell commands, enforces an execution window, and pauses safely whenever client state cannot be proven. Work dispatched by this queue is strictly serial.
+A macOS, loopback-only queue for advancing ZCode sessions one at a time. It resumes existing sessions, creates new ZCode tasks, runs local shell commands, enforces an execution window, and pauses safely whenever client state cannot be proven. Work dispatched by one service instance is strictly serial; this is not a cross-instance coordinator.
 
 ZCode must already be signed in and have run on this Mac. Work uses the desktop client's own models, plan, quota, and concurrency slots. No ZCode/model-provider API key is required, and this project does not bypass client limits; the Web control surface uses a separate local Bearer token.
 
@@ -11,7 +11,8 @@ ZCode must already be signed in and have run on this Mac. Work uses the desktop 
 Requires **Node.js 22.13.0 or newer** with `node:sqlite` available without an experimental flag.
 
 ~~~bash
-cd "/absolute/path/to/zcode-task-queue"
+git clone https://github.com/Samoyer/zcode-task-queue.git
+cd zcode-task-queue
 ./start.sh preflight
 ./start.sh start
 ~~~
@@ -56,15 +57,17 @@ Reattach is allowed only when the complete persisted fingerprint—title, prompt
 
 “Run now” bypasses the time window and current inter-task delay. It does not bypass a manual/safety pause, a storage fault, or another active task.
 
+For a dispatched ZCode task, the UI's “Stop” action stops queue-side monitoring and enters **attention**; if the client can still be proven not to have claimed it, the queue atomically revokes it and marks it stopped instead. Stopping or restarting the service never cancels a client session. On restart the queue reconciles its persisted evidence and resumes monitoring when that evidence is complete, entering **attention** only when the scheduler record is missing, conflicting, or unreadable. Shell tasks instead attempt to terminate the whole process group. Only the guard's explicit client-stop action exits a verified `ZCode.app` process tree.
+
 ## Main features
 
 | Feature | Behavior |
 |---|---|
-| Strict serial queue | Existing-session continuation, new ZCode tasks, and shell commands |
+| Single-instance serial queue | Existing-session continuation, new ZCode tasks, and shell commands |
 | Queue controls | Pause/resume, run now, top/up/down, stop, retry, soft-delete and restore |
 | Lightweight live state | SSE carries active summaries; history, details, and logs load on demand |
 | Client sessions | Recent sessions, todo/tool activity, resume, import, hide and restore |
-| Execution window | Midnight-crossing window; start inclusive, end exclusive; equal times mean all day |
+| Execution window | Midnight-crossing window; start inclusive, end exclusive; equal times mean all day; active work is not interrupted |
 | Guard | Optional scheduled ZCode stop/enable without overwriting manual or attention pauses |
 | Resilient UI | Writable polling fallback, monotonic revisions, instance invalidation, guarded forms, keyboard dialogs/tabs, mobile layout |
 | Bounded shell execution | Capped output memory and process-group termination on timeout/manual stop |
@@ -93,7 +96,7 @@ npm test
 ./smoke-test.sh
 ~~~
 
-`npm test` uses temporary directories and SQLite fixtures for core, HTTP/SSE, persistence faults, crash reconciliation, launcher identity, and launchd rendering. `smoke-test.sh` runs 19 release checks against a fully isolated service on a random port using shell tasks only, so it consumes no ZCode quota. It writes `test-report.md`.
+`npm test` uses temporary directories and SQLite fixtures for core, HTTP/SSE, persistence faults, crash reconciliation, launcher identity, and launchd rendering. `smoke-test.sh` runs 19 release checks: functional tasks use a fully isolated service, temporary state/SQLite, and a random port, while one separate check read-only hashes production files. It consumes no ZCode quota and writes `test-report.md`.
 
 The smoke test read-only hashes the production queue state and the real SQLite main/WAL/SHM files before and after. If ZCode writes concurrently, a hash difference makes that evidence inconclusive rather than proving test contamination; rerun during a quiet window.
 
@@ -118,7 +121,7 @@ Unload it with:
 launchctl bootout "gui/$(id -u)/com.zcode-task-queue"
 ~~~
 
-The generated job uses `Umask=0077`, restarts only after unsuccessful exit, and throttles restarts for 10 seconds. The renderer pre-creates the selected stdout/stderr parent directories and log files, rejects symlinks, and applies 0700/0600 where supported. Re-render after moving Node, the repository, or the state directory. Do not run a `start.sh` instance and a launchd instance on the same port.
+The generated job uses `Umask=0077`, restarts only after unsuccessful exit, and throttles restarts for 10 seconds. The renderer pre-creates the selected stdout/stderr parent directories and log files, rejects symlinks, and applies 0700/0600 where supported. Re-render after moving Node, the repository, or the state directory. Choose either `start.sh` or launchd to manage the service; do not run multiple queue instances against the same ZCode profile, even with different ports or data directories.
 
 To update an already loaded launchd job, first use the `bootout` command above, then re-render, lint, and `bootstrap` it; overwriting the plist on disk does not refresh the loaded configuration. If you set a custom `ZTQ_LAUNCHD_LABEL`, use that label in every `launchctl` command too.
 
@@ -175,7 +178,8 @@ Shell tasks run `/bin/zsh -lc <command>` with the service user's permissions and
 
 ## Operational boundaries
 
-- Serialization covers only work dispatched by this queue. Sessions started directly by the user or another tool can still run concurrently and consume plan slots.
+- Serialization covers only work dispatched by one queue instance. Sessions started directly by the user or another tool can still run concurrently and consume plan slots.
+- The instance lock protects only one data directory. Do not run multiple queue instances against the same ZCode profile, even with different data directories or ports.
 - The queue depends directly on the current ZCode SQLite tables and columns. After a ZCode client upgrade, rerun the regression suite and re-check the schema. Database files being present does not by itself prove version compatibility.
 
 ## Project layout
