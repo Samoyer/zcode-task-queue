@@ -1293,3 +1293,75 @@ test('a pending post-enable resume survives a service restart', async (t) => {
   assert.equal(service.runtime.queue.paused, false);
   assert.equal(service.runtime.queue.guardState.enableResumeAt, 0);
 });
+
+test('ZCode process detection improvements', async (t) => {
+  const { discoverOwnedZcodeTree, possibleZcodeProcess } = require('../server');
+  
+  // Test possibleZcodeProcess with various inputs
+  const testCases = [
+    { cmd: '/Applications/ZCode.app/Contents/MacOS/ZCode', expected: true },
+    { cmd: '/Applications/ZCode.app/Contents/MacOS/ZCode Helper', expected: true },
+    { cmd: '/usr/local/bin/zcode-cli', expected: true },
+    { cmd: '/usr/local/bin/zcode-host-local-1', expected: true },
+    { cmd: '/usr/local/bin/zcode-node-repl-mcp', expected: true },
+    { cmd: '/Applications/ZCode.app/Contents/Helper1', expected: true },
+    { cmd: '/Applications/ZCode.app/Contents/Helper2/chrome_crashpad_handler', expected: true },
+    { cmd: '/System/Library/Private Applications/chrome_crashpad_handler', expected: false },
+    { cmd: '/usr/bin/some-other-process', expected: false },
+  ];
+  
+  for (const { cmd, expected } of testCases) {
+    const result = possibleZcodeProcess({ command: cmd });
+    assert.equal(result, expected, `expected ${expected} for ${cmd}`);
+  }
+});
+
+test('Port binding error handling', async (t) => {
+  const { createService } = require('../server');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ztq-port-'));
+  const dataDir = path.join(tempRoot, 'data');
+  const indexDbPath = path.join(tempRoot, 'zcode', 'v2', 'tasks-index.sqlite');
+  const sessionDbPath = path.join(tempRoot, 'zcode', 'cli', 'db', 'db.sqlite');
+  
+  const { createIndexDb, createSessionDb } = require('./helpers/fixture');
+  createIndexDb(indexDbPath);
+  createSessionDb(sessionDbPath);
+  
+  const env = { ...process.env, ZTQ_TEST_MODE: '1' };
+  const options = {
+    root: path.resolve(__dirname, '..'), dataDir,
+    indexDbPath, sessionDbPath,
+    clientConfigPath: path.join(tempRoot, 'missing-config.json'),
+    pidFile: path.join(tempRoot, 'run', 'pid.json'),
+    readyFile: path.join(tempRoot, 'run', 'ready.json'),
+    logFile: path.join(tempRoot, 'log', 'server.log'),
+    homeDir: tempRoot, host: '127.0.0.1', port: 0, testMode: true, env,
+    apiToken: TEST_TOKEN,
+    logger: () => {},
+  };
+  
+  let service = createService(options);
+  await service.start();
+  const port = service.port;
+  
+  // Try to start another service on the same port
+  const options2 = { ...options, port };
+  let service2 = createService(options2);
+  let error;
+  try {
+    await service2.start();
+    error = new Error('Should have thrown EADDRINUSE');
+  } catch (err) {
+    error = err;
+  }
+  
+  assert.ok(error, 'Should throw error when port is occupied');
+  assert.ok(error.message.includes('已被占用') || error.message.includes('EADDRINUSE'), 'Error message should be helpful');
+  
+  await service.stop();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});

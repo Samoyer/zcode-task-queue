@@ -11,6 +11,7 @@ const TERMINAL = new Set(['done', 'failed', 'stopped', 'timeout']);
 const TOKEN_STORAGE_KEY = 'zcode-task-queue.api-token';
 const UNCERTAIN_STORAGE_KEY = 'zcode-task-queue.uncertain-operations.v2';
 const LEGACY_UNCERTAIN_STORAGE_KEY = 'zcode-task-queue.uncertain-operations.v1';
+const MAX_UNCERTENT_OPERATIONS = 500;
 const guardFieldMap = {
   'schedule-enabled': 'scheduleEnabled',
   'schedule-start': 'scheduleStart',
@@ -131,7 +132,16 @@ function loadUncertainOperations() {
 function persistUncertainOperations() {
   const entries = [...uncertainOperations.values()];
   try {
-    if (entries.length) localStorage.setItem(UNCERTAIN_STORAGE_KEY, JSON.stringify(entries));
+    if (entries.length > MAX_UNCERTENT_OPERATIONS) {
+      // FIFO eviction: remove oldest entries
+      const toRemove = entries.length - MAX_UNCERTENT_OPERATIONS;
+      for (let i = 0; i < toRemove; i++) {
+        const firstKey = Array.from(uncertainOperations.keys())[0];
+        uncertainOperations.delete(firstKey);
+      }
+    }
+    
+    if (entries.length) localStorage.setItem(UNCERTAIN_STORAGE_KEY, JSON.stringify([...uncertainOperations.values()]));
     else localStorage.removeItem(UNCERTAIN_STORAGE_KEY);
     try { sessionStorage.removeItem(LEGACY_UNCERTAIN_STORAGE_KEY); } catch {}
     uncertainStorageError = null;

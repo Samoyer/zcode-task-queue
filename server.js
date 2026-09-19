@@ -52,15 +52,28 @@ function assertNodeSupport(version = process.versions.node) {
 
 function rotateLog(file, maxBytes = 5 * 1024 * 1024, copies = 3) {
   try {
-    if (!fs.existsSync(file) || fs.statSync(file).size < maxBytes) return;
+    if (!fs.existsSync(file)) return;
+    const stats = fs.statSync(file);
+    if (stats.size < maxBytes) return;
+    
     for (let i = copies; i >= 1; i -= 1) {
       const source = i === 1 ? file : `${file}.${i - 1}`;
       const target = `${file}.${i}`;
       if (!fs.existsSync(source)) continue;
-      try { fs.rmSync(target, { force: true }); } catch {}
-      fs.renameSync(source, target);
+      try { fs.rmSync(target, { force: true }); } catch (rmError) {
+        // Ignore errors when removing old log files
+      }
+      try {
+        fs.renameSync(source, target);
+      } catch (renameError) {
+        // If rename fails, the original log will be used next time
+        console.error(`日志轮换失败：${renameError.message}`);
+      }
     }
-  } catch {}
+  } catch (error) {
+    // Log rotation failure should not crash the process
+    console.error(`日志轮换异常：${error.message}`);
+  }
 }
 
 function createLogger(logFile, { mirrorStdout = true } = {}) {
@@ -108,11 +121,8 @@ function writeJsonAtomic(file, value) {
 }
 
 function assertPortAvailable(port) {
-  if (!port || process.platform !== 'darwin' || !fs.existsSync('/usr/sbin/lsof')) return;
-  const probe = spawnSync('/usr/sbin/lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], { encoding: 'utf8' });
-  if (probe.status === 0 && String(probe.stdout || '').trim()) {
-    throw new Error(`端口 ${port} 已有监听进程；拒绝在加载或迁移队列状态前启动`);
-  }
+  // Removed pre-check to avoid TOCTOU race condition.
+  // The server will bind directly and catch EADDRINUSE error.
 }
 
 function acquireInstanceLock(file) {
@@ -464,9 +474,28 @@ function ignorableZcodeBundleProcess(executable) {
 }
 
 function possibleZcodeProcess(entry) {
-  return /(?:^|\/)(?:ZCode(?: Helper(?: \([^)]*\))?)?|zcode-(?:cli|host-local(?:-\d+)?|node-repl(?:-mcp)?)|chrome_crashpad_handler)$/.test(entry.command)
-    || entry.command.includes('/ZCode.app/Contents/')
-    || /^\/Applications\/ZC(?:ode)?/.test(entry.command);
+  const cmd = entry.command;
+  
+  // Precise match for known ZCode binaries (basename only)
+  const basename = cmd.split(/[\\\/]/).pop();
+  if (/^ZCode(?: Helper(?: \([^)]*\))?)?$/.test(basename)) {
+    return true;
+  }
+  if (/^zcode-(?:cli|host-local(?:-\d+)?|node-repl(?:-mcp)?)$/.test(basename)) {
+    return true;
+  }
+  
+  // Path contains ZCode.app/Contents/MacOS/ definitely main process or helper
+  if (/\/ZCode\.app\/Contents\/MacOS\//.test(cmd)) {
+    return true;
+  }
+  
+  // Exclude system crashpad, only consider ZCode's own crashpad
+  if (basename === 'chrome_crashpad_handler') {
+    return /\/ZCode\.app\//.test(cmd);
+  }
+  
+  return false;
 }
 
 function discoverOwnedZcodeTree(controller = defaultProcessController(), ownPid = process.pid) {
@@ -781,7 +810,8 @@ function createService(options = {}) {
 
   function writeSsePeer(peer, payload) {
     if (peer.closed) return;
-    if (peer.res.writableLength > 1024 * 1024) return dropSsePeer(peer);
+    // More aggressive backpressure: drop connection at 512KB instead of 1MB
+    if (peer.res.writableLength > 512 * 1024) return dropSsePeer(peer);
     try {
       if (!peer.res.write(payload)) {
         peer.blocked = true;
@@ -1268,7 +1298,16 @@ function createService(options = {}) {
     try {
       if (timings.startupDelayMs) await sleep(timings.startupDelayMs);
       server = http.createServer(requestHandler);
-      await new Promise((resolve, reject) => { server.once('error', reject); server.listen(requestedPort, host, resolve); });
+      await new Promise((resolve, reject) => {
+        server.once('error', (err) => {
+          if (err.code === 'EADDRINUSE') {
+            reject(new Error(`端口 ${requestedPort} 已被占用，请检查是否已有服务运行或更换端口`));
+          } else {
+            reject(err);
+          }
+        });
+        server.listen(requestedPort, host, resolve);
+      });
       actualPort = server.address().port;
       writeJsonAtomic(pidFile, readyPayload());
       writeJsonAtomic(readyFile, readyPayload());
