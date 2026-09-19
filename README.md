@@ -55,6 +55,47 @@ ZCode Task Queue 是一个只监听本机回环地址的轻量控制台。它复
 
 ## 安装与启动
 
+### 跨平台启动器 (推荐)
+
+本项目现在提供跨平台 Node.js 启动器，支持 macOS 和 Windows。
+
+**使用 npm 脚本:**
+
+~~~bash
+npm start          # 启动服务
+npm stop           # 停止服务
+npm restart        # 重启服务
+npm run status     # 查看状态
+npm run preflight  # 预检检查
+~~~
+
+**或使用启动脚本:**
+
+```bash
+# macOS / Linux
+./start.sh start
+./start.sh status
+
+# Windows
+cd zcode-task-queue
+start.bat start
+start.bat status
+```
+
+**更多选项:**
+
+```bash
+# 指定端口和主机
+node start.js start --port 9090 --host 127.0.0.1
+
+# 查看所有命令
+node start.js --help
+```
+
+详细说明请查看 [STARTER.md](STARTER.md)。
+
+### 传统 Shell 脚本方式
+
 > **⚠️ 重要：数据目录权限要求**
 > 
 > 请将 `data` 目录放在**启用文件所有权的外置文件系统**上（如内置 SSD）。如果数据目录位于启用"忽略此卷的所有权"的外置 APFS 卷或不支持 Unix 权限的文件系统（如 FAT32、exFAT），则 `0600/0700` 权限不是有效的多用户安全边界。
